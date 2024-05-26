@@ -1,0 +1,88 @@
+A sync.WaitGroup named wg is created to manage the goroutines.
+A loop runs from 1 to 1024, representing the range of ports to scan.
+
+Goroutines:
+
+For each port, a new goroutine is spawned using go func(j int) { ... }(i).
+wg.Add(1) increments the wait group counter for each goroutine.
+Inside the goroutine:
+defer wg.Done() ensures that the wait group counter is decremented when the goroutine completes.
+address := fmt.Sprintf("scanme.nmap.org:%d", j) constructs the address string for the current port.
+conn, err := net.Dial("tcp", address) attempts to establish a TCP connection to the address.
+If net.Dial returns an error, the connection could not be established (port is closed or filtered), so the goroutine returns.
+If the connection is successful, it is immediately closed using conn.Close().
+A message is printed indicating the port is open: fmt.Printf("%d open\n", j).
+Waiting for Goroutines:
+
+wg.Wait() blocks until all goroutines have finished.
+Preventing Immediate Exit:
+
+The fmt.Scanln(&input) line keeps the program running until the user provides input, preventing the main function from exiting immediately.
+Comparison to Previous Code Versions
+Concurrency Handling:
+
+The previous version without sync.WaitGroup might have missed some results if the main function exited before all goroutines completed.
+Using sync.WaitGroup ensures that all port checks complete before the program proceeds.
+Immediate Feedback:
+
+The newer version with sync.WaitGroup guarantees that all ports are checked before the program terminates.
+
+
+
+If you run to local adress, in my machine I have trouble;
+So when you increase the loop range, the Go attempts to create a large number of goroutires it can exhaust the available file descriptors or network connections, leading to errors
+
+*Too Many Goroutines: Creating 65535 goroutines simultaneously can be overwhelming for the system. Each goroutine tries to establish a network connection, consuming system resources like file descriptors.
+*Resource Exhaustion: The system has a limit on the number of open files or network connections it can handle at one time. Exceeding this limit causes errors.
+*Netpoll Block: The error trace shows that the goroutines are blocking on network polling, which indicates that the system can't handle the volume of network operations being requested.
+
+
+Here’s how you can implement a improve it:
+
+package main
+
+import (
+	"fmt"
+	"net"
+	"sync"
+)
+
+const maxConcurrentScans = 1000 // Limit the number of concurrent scans
+
+func main() {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrentScans)
+
+	for i := 1; i <= 65535; i++ {
+		wg.Add(1)
+		sem <- struct{}{} // Acquire a slot in the semaphore
+
+		go func(j int) {
+			defer wg.Done()
+			address := fmt.Sprintf("127.0.0.1:%d", j)
+			conn, err := net.Dial("tcp", address)
+			if err != nil {
+				<-sem // Release the slot in the semaphore
+				return
+			}
+			conn.Close()
+			fmt.Printf("%d open\n", j)
+			<-sem // Release the slot in the semaphore
+		}(i)
+	}
+	wg.Wait()
+}
+
+
+1. Semaphore Channel:
+
+A buffered channel (sem) with a capacity of maxConcurrentScans (set to 1000) is used to limit the number of concurrent goroutines.
+Before launching a goroutine, the program acquires a slot by sending a value into the channel.
+After the goroutine finishes its work, it releases the slot by receiving a value from the channel.
+
+2. Controlled Concurrency:
+
+This pattern ensures that only maxConcurrentScans number of goroutines are running at any given time, preventing resource exhaustion.
+WaitGroup:
+
+3.The sync.WaitGroup (wg) is used to wait for all goroutines to finish before the program exits.
