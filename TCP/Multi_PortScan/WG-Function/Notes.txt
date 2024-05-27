@@ -36,6 +36,7 @@ So when you increase the loop range, the Go attempts to create a large number of
 *Resource Exhaustion: The system has a limit on the number of open files or network connections it can handle at one time. Exceeding this limit causes errors.
 *Netpoll Block: The error trace shows that the goroutines are blocking on network polling, which indicates that the system can't handle the volume of network operations being requested.
 
+(This is a alternative a pool workers)
 
 Here’s how you can implement a improve it:
 
